@@ -205,7 +205,8 @@ Current verified scope:
 
 ## Live Demo
 
-[https://thriveai-uab.vercel.app](https://thriveai-uab.vercel.app)
+- App: [https://thriveai-uab.vercel.app](https://thriveai-uab.vercel.app)
+- Source: [https://github.com/johnsawmin2015-tech/ThriveAI-UAB](https://github.com/johnsawmin2015-tech/ThriveAI-UAB)
 
 Production uses a configured OpenAI or Gemini key for model mode. If neither is
 available, `/api/analyze` still returns an honestly labeled
