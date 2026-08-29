@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  TrendingDown,
   TrendingUp,
   WalletCards,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
   useState,
 } from "react";
 
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { businessProfiles, businessProfilesById } from "@/data";
 import {
   SCENARIO_PRESETS,
@@ -37,9 +39,9 @@ import {
   simulateScenario,
   topOverdueCollectionValue,
 } from "@/lib/finance";
+import { useLocale, type Locale, type TranslationCopy } from "@/lib/i18n";
 import type {
   BusinessProfile,
-  FinancialSignal,
   ProfileId,
   ScenarioKind,
 } from "@/types";
@@ -48,52 +50,6 @@ const DEFAULT_PROFILE_ID: ProfileId = "distributor";
 const DEFAULT_SCENARIO_KIND: ScenarioKind = "branch";
 const MINIMUM_RESERVE_MMK = 2_500_000;
 const BRANCH_OUTLAY_MMK = SCENARIO_PRESETS.branch.upfrontCostMmk;
-
-const profileCopy: Record<
-  ProfileId,
-  { readonly nameMm: string; readonly shortMm: string }
-> = {
-  "tea-shop": {
-    nameMm: "ရွှေပြည် လက်ဖက်ရည်ဆိုင်",
-    shortMm: "လက်ဖက်ရည်ဆိုင်",
-  },
-  "clothing-retailer": {
-    nameMm: "မင်္ဂလာ ဖက်ရှင်",
-    shortMm: "အဝတ်အထည်ဆိုင်",
-  },
-  distributor: {
-    nameMm: "အောင်မင်္ဂလာ ဖြန့်ချိရေး",
-    shortMm: "ဖြန့်ချိရေးလုပ်ငန်း",
-  },
-};
-
-const scenarioCopy: Record<
-  ScenarioKind,
-  { readonly mm: string; readonly en: string }
-> = {
-  hire: { mm: "ဝန်ထမ်းအသစ်ခန့်ရန်", en: "Hire an employee" },
-  inventory: { mm: "ကုန်ပစ္စည်းထပ်ဝယ်ရန်", en: "Buy inventory" },
-  branch: { mm: "ဆိုင်ခွဲအသစ်ဖွင့်ရန်", en: "Open a branch" },
-  equipment: { mm: "စက်ပစ္စည်းဝယ်ရန်", en: "Buy equipment" },
-  marketing: { mm: "မားကတ်တင်းလုပ်ရန်", en: "Run marketing" },
-  "custom-expense": { mm: "အခြားအသုံးစရိတ်", en: "Custom expense" },
-};
-
-const signalTitleMm: Record<string, string> = {
-  "cash-runway": "ငွေသားအသုံးခံကာလကို သတိထားပါ",
-  "payables-exceed-cash": "ပေးရန်ရှိငွေက လက်ရှိငွေသားထက်များနေသည်",
-  "overdue-receivables": "ရက်ကျော်ကြွေးကျန်များတွင် ငွေသားပိတ်မိနေသည်",
-  "collection-opportunity": "အဓိကကြွေးများက ငွေသားကို အမြန်ဖွင့်ပေးနိုင်သည်",
-  "revenue-momentum": "အရောင်းတိုးတက်မှုအားကောင်းနေသည်",
-  "expense-growth": "အသုံးစရိတ်တိုးနှုန်းက အရောင်းထက်မြန်နေသည်",
-  "self-funded-growth": "လုပ်ငန်းလည်ပတ်ငွေဖြင့် တိုးချဲ့နိုင်သည့်အခြေအနေ",
-};
-
-const suggestedQuestions = [
-  "ဆိုင်ခွဲမဖွင့်ခင် ဘယ်ကြွေးတွေကို အရင်ကောက်သင့်လဲ?",
-  "အခုချိန် ဆိုင်ခွဲဖွင့်ရင် ငွေသားအန္တရာယ်ဘယ်လောက်ရှိလဲ?",
-  "ငွေသားအသုံးခံကာလ တိုးဖို့ အကောင်းဆုံးလုပ်ဆောင်ချက်ကဘာလဲ?",
-] as const;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -126,7 +82,7 @@ type AnalysisState =
   | {
       readonly phase: "answered";
       readonly question: string;
-      readonly response: NormalizedAnalysis;
+      readonly payload: unknown;
     }
   | {
       readonly phase: "error";
@@ -174,22 +130,21 @@ const objectSummary = (value: unknown): string | undefined => {
   );
 };
 
-const bilingualText = (
+const pickLocalized = (
   record: UnknownRecord,
+  locale: Locale,
   mmKey: string,
   enKey: string,
 ): string | undefined => {
-  const mm = asText(record[mmKey]);
-  const en = asText(record[enKey]);
-
-  if (mm && en) {
-    return `${mm} / ${en}`;
-  }
-
-  return mm ?? en;
+  const preferred = asText(record[locale === "my" ? mmKey : enKey]);
+  const fallback = asText(record[locale === "my" ? enKey : mmKey]);
+  return preferred ?? fallback;
 };
 
-const normalizeTextList = (value: unknown): readonly string[] => {
+const normalizeTextList = (
+  value: unknown,
+  locale: Locale,
+): readonly string[] => {
   if (!Array.isArray(value)) {
     const item = objectSummary(value);
     return item ? [item] : [];
@@ -199,19 +154,18 @@ const normalizeTextList = (value: unknown): readonly string[] => {
     .map((item) => {
       if (isRecord(item)) {
         const evidenceLabel =
-          bilingualText(item, "labelMm", "labelEn") ??
+          pickLocalized(item, locale, "labelMm", "labelEn") ??
           asText(item.label) ??
           asText(item.metric);
-        const evidenceValue =
-          asText(item.displayValue) ?? asText(item.value);
+        const evidenceValue = asText(item.displayValue) ?? asText(item.value);
         if (evidenceLabel && evidenceValue) {
           return `${evidenceLabel}: ${evidenceValue}`;
         }
 
         return (
-          bilingualText(item, "titleMm", "titleEn") ??
-          bilingualText(item, "messageMm", "messageEn") ??
-          bilingualText(item, "rationaleMm", "rationaleEn") ??
+          pickLocalized(item, locale, "titleMm", "titleEn") ??
+          pickLocalized(item, locale, "messageMm", "messageEn") ??
+          pickLocalized(item, locale, "rationaleMm", "rationaleEn") ??
           asText(item.action) ??
           asText(item.summary) ??
           asText(item.detail) ??
@@ -225,7 +179,10 @@ const normalizeTextList = (value: unknown): readonly string[] => {
     .filter((item): item is string => Boolean(item));
 };
 
-const normalizeFindings = (value: unknown): readonly NormalizedFinding[] => {
+const normalizeFindings = (
+  value: unknown,
+  locale: Locale,
+): readonly NormalizedFinding[] => {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -241,7 +198,7 @@ const normalizeFindings = (value: unknown): readonly NormalizedFinding[] => {
       }
 
       const detail =
-        bilingualText(item, "explanationMm", "explanationEn") ??
+        pickLocalized(item, locale, "explanationMm", "explanationEn") ??
         asText(item.detail) ??
         asText(item.summary) ??
         asText(item.explanation) ??
@@ -255,17 +212,20 @@ const normalizeFindings = (value: unknown): readonly NormalizedFinding[] => {
 
       return {
         title:
-          bilingualText(item, "titleMm", "titleEn") ??
+          pickLocalized(item, locale, "titleMm", "titleEn") ??
           asText(item.title) ??
           asText(item.label),
         detail,
-        evidence: normalizeTextList(item.evidence),
+        evidence: normalizeTextList(item.evidence, locale),
       };
     })
     .filter((item): item is NormalizedFinding => item !== null);
 };
 
-const normalizeAnalysis = (value: unknown): NormalizedAnalysis => {
+const normalizeAnalysis = (
+  value: unknown,
+  locale: Locale,
+): NormalizedAnalysis => {
   const record = isRecord(value) ? value : {};
   const meta = isRecord(record.meta) ? record.meta : {};
 
@@ -278,10 +238,10 @@ const normalizeAnalysis = (value: unknown): NormalizedAnalysis => {
     riskLevel: objectSummary(record.riskLevel),
     summaryMm: asText(record.summaryMm),
     summaryEn: asText(record.summaryEn),
-    findings: normalizeFindings(record.findings),
-    nextBestActions: normalizeTextList(record.nextBestActions),
-    limitations: normalizeTextList(record.limitations),
-    degradationReasons: normalizeTextList(record.degradationReasons),
+    findings: normalizeFindings(record.findings, locale),
+    nextBestActions: normalizeTextList(record.nextBestActions, locale),
+    limitations: normalizeTextList(record.limitations, locale),
+    degradationReasons: normalizeTextList(record.degradationReasons, locale),
     model:
       asText(meta.model) ??
       asText(meta.modelName) ??
@@ -313,100 +273,99 @@ const formatMmk = (value: number): string => {
 const formatSignedPercent = (value: number | null): string =>
   value === null ? "—" : `${value > 0 ? "+" : ""}${value}%`;
 
-const formatDate = (isoDate: string): string => {
-  const date = new Date(`${isoDate}T00:00:00.000Z`);
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
 
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date);
+const formatDate = (isoDate: string): string => {
+  const [year, month, day] = isoDate.split("-");
+  const monthIndex = Number(month) - 1;
+  const monthLabel = MONTH_LABELS[monthIndex] ?? month;
+
+  return `${Number(day)} ${monthLabel} ${year}`;
 };
 
 const formatMonth = (month: string): string => {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const date = new Date(Date.UTC(year, monthNumber - 1, 1));
+  const [year, monthNumber] = month.split("-");
+  const monthIndex = Number(monthNumber) - 1;
+  const monthLabel = MONTH_LABELS[monthIndex] ?? monthNumber;
 
-  return new Intl.DateTimeFormat("en-GB", {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date);
+  return `${monthLabel} ${year}`;
 };
 
-const formatRunway = (months: number | null): string =>
-  months === null ? "Self-funding" : `${months} months`;
+const formatRunway = (
+  months: number | null,
+  copy: TranslationCopy,
+): string =>
+  months === null ? copy.metrics.selfFunding : copy.metrics.months(months);
 
-const healthBand = (score: number) => {
+const healthBand = (score: number, copy: TranslationCopy) => {
   if (score >= 75) {
-    return { mm: "တည်ငြိမ်", en: "Stable", tone: "positive" };
+    return { label: copy.snapshot.bands.stable, tone: "positive" as const };
   }
 
   if (score >= 50) {
-    return { mm: "သတိထားရန်", en: "Watch", tone: "warning" };
+    return { label: copy.snapshot.bands.watch, tone: "warning" as const };
   }
 
-  return { mm: "အရေးကြီး", en: "Critical", tone: "danger" };
+  return { label: copy.snapshot.bands.critical, tone: "danger" as const };
 };
-
-const runwayCopy = (profile: BusinessProfile, months: number | null) =>
-  months === null
-    ? {
-        mm: "လတ်တလော ငွေဝင်က ငွေထွက်ကို ကာမိနေသည်",
-        en: "Recent cash inflow covers cash outflow",
-      }
-    : {
-        mm: `လက်ရှိနှုန်းအရ ငွေသားအသုံးခံကာလ ${months} လခန့်ရှိသည်`,
-        en: `Cash runway is about ${months} months at the recent run-rate`,
-      };
 
 const nextActionCopy = (
   profile: BusinessProfile,
   overdueCount: number,
   collectionValueMmk: number,
-  signals: readonly FinancialSignal[],
+  copy: TranslationCopy,
 ) => {
   if (overdueCount > 0) {
     return {
-      mm: `တိုးချဲ့မှုမလုပ်မီ ရက်ကျော်ကြွေး ${Math.min(3, overdueCount)} ခုမှ ${formatMmk(collectionValueMmk)} ကို အရင်ကောက်ပါ။`,
-      en: `Collect ${formatMmk(collectionValueMmk)} from the top ${Math.min(3, overdueCount)} overdue invoices before expanding.`,
-      support:
-        "Collection timing protects the reserve without giving up the expansion option.",
+      amount: formatMmk(collectionValueMmk),
+      headline: copy.action.collectHeadline,
+      title: copy.action.collectDetail(Math.min(3, overdueCount)),
+      support: copy.action.collectSupport,
     };
   }
 
-  if (profile.payables.reduce((sum, item) => sum + item.outstandingAmountMmk, 0) >
-    profile.currentCashMmk) {
+  if (
+    profile.payables.reduce((sum, item) => sum + item.outstandingAmountMmk, 0) >
+    profile.currentCashMmk
+  ) {
     return {
-      mm: "ပေးသွင်းသူငွေချေရက်ကို အတည်ပြုထားသော ငွေကောက်ရက်နှင့် အရင်ညှိပါ။",
-      en: "Align supplier due dates with confirmed collections first.",
-      support:
-        signals[0]?.action ??
-        "Protect current cash before committing to discretionary spending.",
+      amount: null,
+      headline: null,
+      title: copy.action.alignPayables,
+      support: copy.action.collectSupport,
     };
   }
 
   return {
-    mm: "ငွေသားအရန်ကို ထိန်းထားပြီး ကန့်သတ်ထားသော ရင်းနှီးမြှုပ်နှံမှုတစ်ခုကိုသာ စမ်းပါ။",
-    en: "Test one bounded investment while preserving the cash reserve.",
-    support:
-      signals[0]?.action ??
-      "Use a small, reversible step and review the result before scaling.",
+    amount: null,
+    headline: null,
+    title: copy.action.boundedTest,
+    support: copy.action.collectSupport,
   };
 };
 
 function MetricCard({
   icon,
-  labelMm,
-  labelEn,
+  label,
   value,
   detail,
   tone = "neutral",
 }: {
   readonly icon: React.ReactNode;
-  readonly labelMm: string;
-  readonly labelEn: string;
+  readonly label: string;
   readonly value: string;
   readonly detail: string;
   readonly tone?: "neutral" | "positive" | "warning" | "danger";
@@ -417,12 +376,7 @@ function MetricCard({
         <span className="metric-icon" aria-hidden="true">
           {icon}
         </span>
-        <span>
-          <span lang="my">{labelMm}</span>
-          <span className="metric-label-en" lang="en">
-            {labelEn}
-          </span>
-        </span>
+        <span className="metric-label">{label}</span>
       </div>
       <strong className="metric-value">{value}</strong>
       <span className="metric-detail">{detail}</span>
@@ -432,9 +386,13 @@ function MetricCard({
 
 function AnalysisPanel({
   state,
+  locale,
+  copy,
   onRetry,
 }: {
   readonly state: AnalysisState;
+  readonly locale: Locale;
+  readonly copy: TranslationCopy;
   readonly onRetry: () => void;
 }) {
   if (state.phase === "idle") {
@@ -447,8 +405,8 @@ function AnalysisPanel({
         <div className="analysis-loading">
           <Loader2 className="spin" aria-hidden="true" />
           <div>
-            <strong lang="my">အချက်အလက်များကို စစ်ဆေးနေသည်…</strong>
-            <span>Analyzing the selected business data.</span>
+            <strong>{copy.analysis.loadingTitle}</strong>
+            <span>{copy.analysis.loadingDetail}</span>
           </div>
         </div>
       </section>
@@ -460,78 +418,87 @@ function AnalysisPanel({
       <section className="analysis-panel analysis-error card" role="alert">
         <AlertCircle aria-hidden="true" />
         <div>
-          <strong lang="my">အဖြေမရသေးပါ</strong>
-          <p>{state.message}</p>
+          <strong>{copy.analysis.errorTitle}</strong>
+          <p>{copy.analysis.errorRetry}</p>
           <button className="text-button" type="button" onClick={onRetry}>
             <RefreshCw aria-hidden="true" />
-            <span lang="my">ပြန်ကြိုးစားမည်</span>
-            <span aria-hidden="true">·</span>
-            <span>Retry</span>
+            <span>{copy.analysis.retry}</span>
           </button>
         </div>
       </section>
     );
   }
 
-  const { response } = state;
+  const response = normalizeAnalysis(state.payload, locale);
   const mode = response.mode ?? "unknown";
   const isFallback = /fallback|degrad|determin/i.test(mode);
-  const hasSummary = Boolean(response.summaryMm || response.summaryEn);
+  const summary =
+    locale === "my"
+      ? (response.summaryMm ?? response.summaryEn)
+      : (response.summaryEn ?? response.summaryMm);
 
   return (
     <section className="analysis-panel card" aria-labelledby="analysis-title">
       <div className="section-heading analysis-heading">
         <div>
-          <span className="eyebrow" lang="my">
-            ThriveAI အဖြေ
-          </span>
-          <h2 id="analysis-title">ဆုံးဖြတ်ချက်အထောက်အကူ</h2>
-          <p>Decision support for “{state.question}”</p>
+          <span className="eyebrow">{copy.analysis.eyebrow}</span>
+          <h2 id="analysis-title">{copy.analysis.title}</h2>
+          <p>{copy.analysis.forQuestion(state.question)}</p>
         </div>
         <div className={`mode-badge ${isFallback ? "mode-fallback" : "mode-model"}`}>
-          {isFallback ? <ShieldCheck aria-hidden="true" /> : <MessageCircle aria-hidden="true" />}
-          <span>{mode}</span>
-          {response.model ? <span>· {response.model}</span> : null}
+          {isFallback ? (
+            <ShieldCheck aria-hidden="true" />
+          ) : (
+            <MessageCircle aria-hidden="true" />
+          )}
+          <span>{isFallback ? copy.analysis.fallback : mode}</span>
+          {response.model ? (
+            <span>
+              · {copy.analysis.model} {response.model}
+            </span>
+          ) : null}
         </div>
       </div>
 
       <div className="analysis-summary">
-        {response.summaryMm ? (
-          <p className="summary-mm" lang="my">
-            {response.summaryMm}
-          </p>
-        ) : null}
-        {response.summaryEn ? (
-          <p className="summary-en" lang="en">
-            {response.summaryEn}
-          </p>
-        ) : null}
-        {!hasSummary ? (
-          <p className="summary-en">
-            The endpoint returned no summary text. Structured details are shown
-            below where available.
-          </p>
-        ) : null}
+        {summary ? (
+          <p className="summary-primary">{summary}</p>
+        ) : (
+          <p>{copy.analysis.emptySummary}</p>
+        )}
       </div>
 
       <div className="analysis-meta">
-        {response.status ? <span>Status: {response.status}</span> : null}
-        {response.intent ? <span>Intent: {response.intent}</span> : null}
+        {response.status ? (
+          <span>
+            {copy.analysis.status}: {response.status}
+          </span>
+        ) : null}
+        {response.intent ? (
+          <span>
+            {copy.analysis.intent}: {response.intent}
+          </span>
+        ) : null}
         {response.answerLanguage ? (
-          <span>Language: {response.answerLanguage}</span>
+          <span>
+            {copy.analysis.language}: {response.answerLanguage}
+          </span>
         ) : null}
         {response.businessHealth ? (
-          <span>Health: {response.businessHealth}</span>
+          <span>
+            {copy.analysis.health}: {response.businessHealth}
+          </span>
         ) : null}
-        {response.riskLevel ? <span>Risk: {response.riskLevel}</span> : null}
+        {response.riskLevel ? (
+          <span>
+            {copy.analysis.risk}: {response.riskLevel}
+          </span>
+        ) : null}
       </div>
 
       {response.findings.length > 0 ? (
         <div className="analysis-block">
-          <h3>
-            <span lang="my">တွေ့ရှိချက်</span>
-            <span>Findings</span>
-          </h3>
+          <h3>{copy.analysis.findings}</h3>
           <ol className="finding-list">
             {response.findings.map((finding, index) => (
               <li key={`${finding.detail}-${index}`}>
@@ -552,10 +519,7 @@ function AnalysisPanel({
 
       {response.nextBestActions.length > 0 ? (
         <div className="analysis-block">
-          <h3>
-            <span lang="my">နောက်တစ်ဆင့်</span>
-            <span>Next best actions</span>
-          </h3>
+          <h3>{copy.analysis.actions}</h3>
           <ol className="action-list">
             {response.nextBestActions.map((action, index) => (
               <li key={`${action}-${index}`}>{action}</li>
@@ -569,12 +533,11 @@ function AnalysisPanel({
         <details className="analysis-disclosure">
           <summary>
             <ChevronDown aria-hidden="true" />
-            <span lang="my">ကန့်သတ်ချက်များ</span>
-            <span>Limitations &amp; degradation</span>
+            <span>{copy.analysis.limitations}</span>
           </summary>
           {response.degradationReasons.length > 0 ? (
             <>
-              <strong>Degradation reasons</strong>
+              <strong>{copy.analysis.degradation}</strong>
               <ul>
                 {response.degradationReasons.map((reason, index) => (
                   <li key={`${reason}-${index}`}>{reason}</li>
@@ -584,7 +547,7 @@ function AnalysisPanel({
           ) : null}
           {response.limitations.length > 0 ? (
             <>
-              <strong>Limitations</strong>
+              <strong>{copy.analysis.limitations}</strong>
               <ul>
                 {response.limitations.map((limitation, index) => (
                   <li key={`${limitation}-${index}`}>{limitation}</li>
@@ -599,6 +562,7 @@ function AnalysisPanel({
 }
 
 export function DecisionWorkspace() {
+  const { locale, copy, setLocale } = useLocale();
   const [selectedProfileId, setSelectedProfileId] =
     useState<ProfileId>(DEFAULT_PROFILE_ID);
   const [scenarioKind, setScenarioKind] = useState<ScenarioKind>(
@@ -616,6 +580,7 @@ export function DecisionWorkspace() {
   const requestSequenceRef = useRef(0);
 
   const profile = businessProfilesById[selectedProfileId];
+  const profileLabels = copy.profiles[selectedProfileId];
   const snapshot = useMemo(
     () => calculateFinancialSnapshot(profile),
     [profile],
@@ -700,7 +665,7 @@ export function DecisionWorkspace() {
         body: JSON.stringify({
           businessId: selectedProfileId,
           question: submittedQuestion,
-          preferredLanguage: "auto",
+          preferredLanguage: locale,
         }),
         signal: controller.signal,
       });
@@ -734,7 +699,7 @@ export function DecisionWorkspace() {
       setAnalysisState({
         phase: "answered",
         question: submittedQuestion,
-        response: normalizeAnalysis(payload),
+        payload,
       });
     } catch (error) {
       if (
@@ -752,6 +717,7 @@ export function DecisionWorkspace() {
             ? error.message
             : "The analysis service could not be reached.",
       });
+      console.error("ThriveAI analysis failed", error);
     }
   };
 
@@ -794,75 +760,98 @@ export function DecisionWorkspace() {
 
   const retryQuestion =
     analysisState.phase === "error" ? analysisState.question : question;
-  const band = healthBand(health.total);
+  const band = healthBand(health.total, copy);
   const payableGapMmk = Math.max(
     snapshot.liquidity.payablesMmk - profile.currentCashMmk,
     0,
   );
-  const runway = runwayCopy(profile, snapshot.runway.months);
   const nextAction = nextActionCopy(
     profile,
     prioritizedInvoices.length,
     expectedCollectionsMmk,
-    signals,
+    copy,
   );
   const growth = snapshot.growth.revenueGrowthPercent;
+  const snapshotInsight =
+    growth !== null && growth > 0
+      ? copy.snapshot.growthUp(formatSignedPercent(growth))
+      : copy.snapshot.growthFlat;
+  const snapshotConstraint =
+    payableGapMmk > 0
+      ? copy.snapshot.payableGap(formatMmk(payableGapMmk))
+      : snapshot.runway.months === null
+        ? copy.runway.covers
+        : copy.runway.months(snapshot.runway.months);
+  const assistantStatus =
+    analysisState.phase === "loading"
+      ? copy.assistant.loading
+      : analysisState.phase === "answered"
+        ? copy.assistant.answered
+        : analysisState.phase === "error"
+          ? copy.assistant.error
+          : copy.assistant.idle;
 
   return (
     <main className="workspace-shell">
       <header className="workspace-header">
-        <a className="brand" href="#decision-snapshot" aria-label="ThriveAI home">
+        <a className="brand" href="#decision-snapshot" aria-label={copy.brand.homeAria}>
           <span className="brand-mark" aria-hidden="true">
             T
           </span>
           <span>
-            <strong>ThriveAI</strong>
-            <small>SME decision copilot</small>
+            <strong>{copy.brand.name}</strong>
+            <small>{copy.brand.tagline}</small>
           </span>
         </a>
 
-        <div className="business-context">
-          <label htmlFor="business-selector">
-            <Building2 aria-hidden="true" />
-            <span>
-              <span lang="my">ရွေးချယ်ထားသောလုပ်ငန်း</span>
-              <span>Selected SME</span>
-            </span>
-          </label>
-          <div className="select-wrap">
-            <select
-              id="business-selector"
-              value={selectedProfileId}
-              onChange={(event) =>
-                handleProfileChange(event.target.value as ProfileId)
-              }
-            >
-              {businessProfiles.map((business) => (
-                <option key={business.id} value={business.id}>
-                  {profileCopy[business.id].nameMm} · {business.businessName}
-                </option>
-              ))}
-            </select>
-            <ChevronDown aria-hidden="true" />
+        <div className="header-tools">
+          <div className="business-context">
+            <label htmlFor="business-selector">
+              <Building2 aria-hidden="true" />
+              <span>{copy.selector.label}</span>
+            </label>
+            <div className="select-wrap">
+              <select
+                id="business-selector"
+                value={selectedProfileId}
+                aria-label={copy.selector.aria}
+                onChange={(event) =>
+                  handleProfileChange(event.target.value as ProfileId)
+                }
+              >
+                {businessProfiles.map((business) => (
+                  <option key={business.id} value={business.id}>
+                    {copy.profiles[business.id].name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown aria-hidden="true" />
+            </div>
           </div>
+          <LanguageSwitcher
+            locale={locale}
+            enLabel={copy.language.en}
+            myLabel={copy.language.my}
+            enAria={copy.language.enAria}
+            myAria={copy.language.myAria}
+            groupAria={copy.language.groupAria}
+            onChange={setLocale}
+          />
         </div>
       </header>
 
-      <section
-        className="business-strip"
-        aria-label="Selected business context"
-      >
+      <section className="business-strip" aria-label={copy.selector.label}>
         <div>
-          <span className="business-name-mm" lang="my">
-            {profileCopy[profile.id].nameMm}
-          </span>
-          <span className="business-name-en">{profile.businessName}</span>
+          <span className="business-name">{profileLabels.name}</span>
         </div>
         <div className="business-meta">
-          <span>{profile.sector}</span>
-          <span>{profile.location}</span>
+          <span>{profileLabels.sector}</span>
+          <span>{profileLabels.location}</span>
           <span>
-            Data as of <time dateTime={profile.asOfDate}>{formatDate(profile.asOfDate)}</time>
+            {copy.business.dataAsOf}{" "}
+            <time dateTime={profile.asOfDate}>
+              {formatDate(profile.asOfDate)}
+            </time>
           </span>
         </div>
       </section>
@@ -873,101 +862,78 @@ export function DecisionWorkspace() {
         aria-labelledby="snapshot-title"
       >
         <div className="score-block">
-          <span className="eyebrow" lang="my">
-            လုပ်ငန်းကျန်းမာရေး
-          </span>
+          <span className="eyebrow">{copy.snapshot.eyebrow}</span>
           <div className="score-value-row">
             <strong className="score-value">{health.total}</strong>
             <span className="score-denominator">/100</span>
           </div>
           <span className={`status-pill status-${band.tone}`}>
-            <span lang="my">{band.mm}</span>
-            <span aria-hidden="true">·</span>
-            <span>{band.en}</span>
+            {band.label}
           </span>
           <span className="method-label">
-            Deterministic · method v{health.methodologyVersion}
+            {copy.snapshot.method} · v{health.methodologyVersion}
           </span>
         </div>
 
         <div className="snapshot-story">
-          <span className="eyebrow" lang="my">
-            ယခုဆုံးဖြတ်ရမည့်အချက်
-          </span>
-          <h1 id="snapshot-title" lang="my">
-            {growth !== null && growth > 0
-              ? `စာရင်းဝင်အရောင်း ${formatSignedPercent(growth)} တက်လာပေမယ့်`
-              : "စာရင်းဝင်အရောင်းကို ထိန်းထားနိုင်ပေမယ့်"}{" "}
-            {payableGapMmk > 0
-              ? `ပေးရန်ရှိငွေက လက်ရှိငွေသားထက် ${formatMmk(payableGapMmk)} များနေသည်။`
-              : runway.mm}
+          <span className="eyebrow">{copy.snapshot.decisionEyebrow}</span>
+          <h1 id="snapshot-title">
+            {snapshotInsight} {snapshotConstraint}
           </h1>
-          <p className="snapshot-summary" lang="en">
-            {growth !== null
-              ? `Accrual revenue changed ${formatSignedPercent(growth)} month on month. `
-              : ""}
-            {payableGapMmk > 0
-              ? `Supplier obligations exceed cash by ${formatMmk(payableGapMmk)}; ${runway.en.toLowerCase()}.`
-              : `${runway.en}.`}
-          </p>
         </div>
 
         <details className="score-disclosure">
           <summary>
             <Calculator aria-hidden="true" />
-            <span lang="my">တွက်ချက်ပုံ</span>
-            <span>How calculated</span>
+            <span>{copy.snapshot.howCalculated}</span>
             <ChevronDown className="disclosure-chevron" aria-hidden="true" />
           </summary>
           <div className="score-breakdown">
             <div>
-              <span>Profitability · 30%</span>
+              <span>{copy.snapshot.profitability}</span>
               <strong>{health.subScores.profitability}/100</strong>
             </div>
             <div>
-              <span>Liquidity · 25%</span>
+              <span>{copy.snapshot.liquidity}</span>
               <strong>{health.subScores.liquidity}/100</strong>
             </div>
             <div>
-              <span>Cash flow · 30%</span>
+              <span>{copy.snapshot.cashFlow}</span>
               <strong>{health.subScores.cashFlow}/100</strong>
             </div>
             <div>
-              <span>Growth · 15%</span>
+              <span>{copy.snapshot.growth}</span>
               <strong>{health.subScores.growth}/100</strong>
             </div>
           </div>
-          <p>
-            Weighted screening score: profitability 30% + liquidity 25% +
-            cash flow 30% + growth 15%. It is not a credit score or accounting
-            opinion.
-          </p>
+          <p>{copy.snapshot.methodNote}</p>
         </details>
       </section>
 
-      <section className="metric-grid" aria-label="Four primary metrics">
+      <section className="metric-grid" aria-label={copy.metrics.aria}>
         <MetricCard
           icon={<TrendingUp />}
-          labelMm="နောက်ဆုံးလ အရောင်း"
-          labelEn="Latest revenue"
+          label={copy.metrics.revenue}
           value={formatMmk(snapshot.revenueMmk)}
-          detail={`${formatMonth(snapshot.month)} · ${formatSignedPercent(growth)} MoM`}
+          detail={`${formatMonth(snapshot.month)} · ${formatSignedPercent(growth)} ${copy.metrics.mom}`}
           tone={growth !== null && growth >= 0 ? "positive" : "warning"}
         />
         <MetricCard
           icon={<WalletCards />}
-          labelMm="လက်ရှိငွေသား"
-          labelEn="Cash now"
+          label={copy.metrics.cash}
           value={formatMmk(profile.currentCashMmk)}
-          detail={`Cash coverage ${snapshot.liquidity.cashCoverageRatio ?? "—"}×`}
+          detail={copy.metrics.cashCoverage(
+            String(snapshot.liquidity.cashCoverageRatio ?? "—"),
+          )}
           tone="neutral"
         />
         <MetricCard
           icon={<Clock3 />}
-          labelMm="ငွေသားအသုံးခံကာလ"
-          labelEn="Cash runway"
-          value={formatRunway(snapshot.runway.months)}
-          detail={`Recent monthly burn ${formatMmk(snapshot.runway.monthlyBurnMmk)}`}
+          label={copy.metrics.runway}
+          value={formatRunway(snapshot.runway.months, copy)}
+          detail={copy.metrics.monthlyBurn(
+            formatMmk(snapshot.runway.monthlyBurnMmk),
+          )}
           tone={
             snapshot.runway.status === "critical"
               ? "danger"
@@ -978,10 +944,9 @@ export function DecisionWorkspace() {
         />
         <MetricCard
           icon={<CircleDollarSign />}
-          labelMm="ပေးရန်ရှိငွေ"
-          labelEn="Outstanding payables"
+          label={copy.metrics.payables}
           value={formatMmk(snapshot.liquidity.payablesMmk)}
-          detail={`${profile.payables.length} supplier obligation${profile.payables.length === 1 ? "" : "s"}`}
+          detail={copy.metrics.supplierCount(profile.payables.length)}
           tone={
             snapshot.liquidity.payablesMmk > profile.currentCashMmk
               ? "danger"
@@ -992,97 +957,154 @@ export function DecisionWorkspace() {
 
       <AnalysisPanel
         state={analysisState}
+        locale={locale}
+        copy={copy}
         onRetry={() => void submitQuestion(retryQuestion)}
       />
 
-      <section className="decision-grid" aria-label="Recommended decision path">
+      <section className="decision-grid" aria-label={copy.action.pathAria}>
         <article className="next-action card">
           <div className="section-heading">
             <div>
-              <span className="eyebrow" lang="my">
-                အကောင်းဆုံးနောက်တစ်ဆင့်
-              </span>
-              <h2>Next best action</h2>
+              <span className="eyebrow">{copy.action.eyebrow}</span>
+              <h2>{copy.action.title}</h2>
             </div>
             <span className="section-icon icon-positive" aria-hidden="true">
               <ArrowRight />
             </span>
           </div>
-          <p className="action-primary" lang="my">
-            {nextAction.mm}
-          </p>
-          <p className="action-english">{nextAction.en}</p>
-          <p className="action-support">{nextAction.support}</p>
-          <div className="action-impact" aria-label="Cash bridge preview">
-            <span>
-              <small>Expand now</small>
+
+          <div className="action-hero">
+            {nextAction.amount ? (
+              <>
+                <strong className="action-amount">{nextAction.amount}</strong>
+                <span className="action-headline">{nextAction.headline}</span>
+              </>
+            ) : null}
+            <p className="action-primary">{nextAction.title}</p>
+          </div>
+
+          <div className="action-why">
+            <span>{copy.action.whyMatters}</span>
+            <p>{nextAction.support}</p>
+          </div>
+
+          <div className="action-impact" aria-label={copy.action.impactAria}>
+            <span className="impact-risk">
+              <small>{copy.action.expandNow}</small>
               <strong>{formatMmk(cashBridgeNow.endingCashMmk)}</strong>
             </span>
             <ArrowRight aria-hidden="true" />
-            <span>
-              <small>Collect, then expand</small>
-              <strong>{formatMmk(cashBridgeAfterCollections.endingCashMmk)}</strong>
+            <span className="impact-safe">
+              <small>{copy.action.collectThen}</small>
+              <strong>
+                {formatMmk(cashBridgeAfterCollections.endingCashMmk)}
+              </strong>
             </span>
           </div>
           <button
             className="secondary-button"
             type="button"
-            onClick={() => void submitQuestion(suggestedQuestions[0])}
+            onClick={() => void submitQuestion(copy.assistant.prompts[0])}
           >
             <MessageCircle aria-hidden="true" />
-            <span lang="my">ဒီအကြံပြုချက်ကို မေးမည်</span>
-            <span>Ask ThriveAI</span>
+            <span>{copy.action.ask}</span>
+            <ArrowRight aria-hidden="true" />
           </button>
         </article>
 
         <article className="cash-bridge card">
           <div className="section-heading">
             <div>
-              <span className="eyebrow" lang="my">
-                ငွေသားအကူးအပြောင်း
-              </span>
-              <h2>Cash Bridge</h2>
-              <p>Collect first, then decide—not a cash forecast.</p>
+              <span className="eyebrow">{copy.bridge.eyebrow}</span>
+              <h2>{copy.bridge.title}</h2>
+              <p>{copy.bridge.subtitle}</p>
             </div>
             <span className="section-icon icon-warning" aria-hidden="true">
               <Calculator />
             </span>
           </div>
 
-          <div className="assumption-row" aria-label="Cash bridge assumptions">
-            <span>Top 3 overdue: {formatMmk(expectedCollectionsMmk)}</span>
-            <span>Branch outlay: {formatMmk(BRANCH_OUTLAY_MMK)}</span>
-            <span>Reserve: {formatMmk(MINIMUM_RESERVE_MMK)}</span>
-          </div>
+          <p className="bridge-cash-label">{copy.bridge.cashAfter}</p>
 
           <div className="bridge-paths">
             <div className="bridge-path bridge-risk">
               <div className="bridge-path-heading">
-                <span lang="my">အခုတိုးချဲ့မည်</span>
-                <span>Expand now</span>
+                <TrendingDown aria-hidden="true" />
+                <span>
+                  <small>{copy.bridge.riskyPath}</small>
+                  <strong>{copy.bridge.expandNow}</strong>
+                </span>
               </div>
-              <div className="bridge-equation">
+              <strong className="bridge-result">
+                {formatMmk(cashBridgeNow.endingCashMmk)}
+              </strong>
+              <p>
+                {copy.bridge.reserveGap}:{" "}
+                <strong>{formatMmk(cashBridgeNow.reserveGapMmk)}</strong>
+              </p>
+            </div>
+
+            <div className="bridge-arrow" aria-hidden="true">
+              <span>{copy.bridge.versus}</span>
+            </div>
+
+            <div className="bridge-path bridge-safe">
+              <div className="bridge-path-heading">
+                <ShieldCheck aria-hidden="true" />
+                <span>
+                  <small>{copy.bridge.saferPath}</small>
+                  <strong>{copy.bridge.collectThen}</strong>
+                </span>
+              </div>
+              <strong className="bridge-result">
+                {formatMmk(cashBridgeAfterCollections.endingCashMmk)}
+              </strong>
+              <p>
+                {cashBridgeAfterCollections.reserveProtected
+                  ? `${copy.bridge.reserveProtected} · ${formatMmk(cashBridgeAfterCollections.surplusAboveReserveMmk)} ${copy.bridge.aboveMinimum}`
+                  : `${copy.bridge.reserveGap} · ${formatMmk(cashBridgeAfterCollections.reserveGapMmk)}`}
+              </p>
+            </div>
+          </div>
+
+          <div className="assumption-row" aria-label={copy.bridge.title}>
+            <span>
+              {copy.bridge.topOverdue}: {formatMmk(expectedCollectionsMmk)}
+            </span>
+            <span>
+              {copy.bridge.branchOutlay}: {formatMmk(BRANCH_OUTLAY_MMK)}
+            </span>
+            <span>
+              {copy.bridge.reserve}: {formatMmk(MINIMUM_RESERVE_MMK)}
+            </span>
+          </div>
+
+          <div className="bridge-decision">
+            <AlertCircle aria-hidden="true" />
+            <p>
+              {copy.bridge.required(
+                formatMmk(cashBridgeNow.requiredCollectionsMmk),
+              )}
+            </p>
+          </div>
+
+          <details className="calculation-disclosure">
+            <summary>
+              <ChevronDown aria-hidden="true" />
+              <span>{copy.bridge.how}</span>
+            </summary>
+            <div>
+              <p className="bridge-equation">
+                <span>{copy.bridge.expandNow}:</span>
                 <span>{formatMmk(profile.currentCashMmk)}</span>
                 <span aria-hidden="true">−</span>
                 <span>{formatMmk(BRANCH_OUTLAY_MMK)}</span>
                 <span aria-hidden="true">=</span>
                 <strong>{formatMmk(cashBridgeNow.endingCashMmk)}</strong>
-              </div>
-              <p>
-                Reserve gap: <strong>{formatMmk(cashBridgeNow.reserveGapMmk)}</strong>
               </p>
-            </div>
-
-            <div className="bridge-arrow" aria-hidden="true">
-              <ArrowRight />
-            </div>
-
-            <div className="bridge-path bridge-safe">
-              <div className="bridge-path-heading">
-                <span lang="my">အရင်ကောက်ပြီး တိုးချဲ့မည်</span>
-                <span>Collect, then expand</span>
-              </div>
-              <div className="bridge-equation">
+              <p className="bridge-equation">
+                <span>{copy.bridge.collectThen}:</span>
                 <span>{formatMmk(profile.currentCashMmk)}</span>
                 <span aria-hidden="true">+</span>
                 <span>{formatMmk(expectedCollectionsMmk)}</span>
@@ -1092,51 +1114,10 @@ export function DecisionWorkspace() {
                 <strong>
                   {formatMmk(cashBridgeAfterCollections.endingCashMmk)}
                 </strong>
-              </div>
-              <p>
-                {cashBridgeAfterCollections.reserveProtected
-                  ? `Reserve protected · ${formatMmk(cashBridgeAfterCollections.surplusAboveReserveMmk)} above minimum`
-                  : `Reserve gap · ${formatMmk(cashBridgeAfterCollections.reserveGapMmk)}`}
               </p>
-            </div>
-          </div>
-
-          <div className="bridge-decision">
-            <AlertCircle aria-hidden="true" />
-            <p>
-              <span lang="my">
-                အရန်ငွေကို ကာကွယ်ရန် အနည်းဆုံး{" "}
-                <strong>{formatMmk(cashBridgeNow.requiredCollectionsMmk)}</strong>{" "}
-                အရင်ကောက်ရန်လိုသည်။
-              </span>
-              <span>
-                Collect at least{" "}
-                <strong>{formatMmk(cashBridgeNow.requiredCollectionsMmk)}</strong>{" "}
-                before the outlay to protect the minimum reserve.
-              </span>
-            </p>
-          </div>
-
-          <details className="calculation-disclosure">
-            <summary>
-              <ChevronDown aria-hidden="true" />
-              <span lang="my">တွက်ချက်ပုံနှင့် ယူဆချက်များ</span>
-              <span>How calculated</span>
-            </summary>
-            <div>
-              <p>
-                Ending cash = current cash + expected collections − decision
-                outlay.
-              </p>
-              <p>
-                Required collection = max(0, outlay + minimum reserve − current
-                cash).
-              </p>
-              <p>
-                Expected collections use only the top three invoices already
-                overdue as of the profile&apos;s data date. Collection is an
-                assumption, not a guarantee.
-              </p>
+              <p>{copy.bridge.formula1}</p>
+              <p>{copy.bridge.formula2}</p>
+              <p>{copy.bridge.formula3}</p>
             </div>
           </details>
         </article>
@@ -1144,10 +1125,8 @@ export function DecisionWorkspace() {
         <article className="why-card card">
           <div className="section-heading">
             <div>
-              <span className="eyebrow" lang="my">
-                ဘာကြောင့်လဲ
-              </span>
-              <h2>Evidence behind the action</h2>
+              <span className="eyebrow">{copy.evidence.eyebrow}</span>
+              <h2>{copy.evidence.title}</h2>
             </div>
             <span className="section-icon" aria-hidden="true">
               <ShieldCheck />
@@ -1156,32 +1135,35 @@ export function DecisionWorkspace() {
 
           <div className="signal-list">
             {signals.length > 0 ? (
-              signals.map((signal) => (
-                <div className="signal-row" key={signal.id}>
-                  <span
-                    className={`signal-dot signal-${signal.kind} signal-${signal.severity}`}
-                    aria-hidden="true"
-                  />
-                  <div>
-                    <strong lang="my">
-                      {signalTitleMm[signal.id] ?? signal.title}
-                    </strong>
-                    <span>{signal.title}</span>
-                    <p>{signal.explanation}</p>
+              signals.map((signal) => {
+                const signalCopy =
+                  signal.id in copy.signals
+                    ? copy.signals[signal.id as keyof typeof copy.signals]
+                    : null;
+                return (
+                  <div className="signal-row" key={signal.id}>
+                    <span
+                      className={`signal-dot signal-${signal.kind} signal-${signal.severity}`}
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <span className={`signal-kind kind-${signal.kind}`}>
+                        {copy.evidence.kinds[signal.kind]}
+                      </span>
+                      <strong>{signalCopy?.title ?? signal.title}</strong>
+                      <p>{signalCopy?.explanation ?? signal.explanation}</p>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
-              <p className="empty-copy">No material finance signals found.</p>
+              <p className="empty-copy">{copy.evidence.empty}</p>
             )}
           </div>
 
           <div className="invoice-block">
             <div className="subsection-heading">
-              <h3>
-                <span lang="my">ဦးစားပေးကောက်ရန်</span>
-                <span>Priority overdue invoices</span>
-              </h3>
+              <h3>{copy.evidence.invoices}</h3>
               <strong>{formatMmk(expectedCollectionsMmk)}</strong>
             </div>
             {prioritizedInvoices.length > 0 ? (
@@ -1189,21 +1171,24 @@ export function DecisionWorkspace() {
                 {prioritizedInvoices.slice(0, 3).map((invoice) => (
                   <li key={invoice.id}>
                     <span className={`priority-tag priority-${invoice.priority}`}>
-                      {invoice.priority}
+                      {copy.evidence.priorities[invoice.priority]}
                     </span>
                     <span>
                       <strong>{invoice.customerName}</strong>
                       <small>
-                        {invoice.daysOverdue} days overdue · {invoice.id}
+                        {copy.evidence.daysOverdue(invoice.daysOverdue)} ·{" "}
+                        {invoice.id}
                       </small>
                     </span>
-                    <strong>{formatMmk(invoice.outstandingAmountMmk)}</strong>
+                    <strong className="invoice-amount">
+                      {formatMmk(invoice.outstandingAmountMmk)}
+                    </strong>
                   </li>
                 ))}
               </ol>
             ) : (
               <p className="empty-copy">
-                No invoices are overdue as of {formatDate(profile.asOfDate)}.
+                {copy.evidence.noneOverdue(formatDate(profile.asOfDate))}
               </p>
             )}
           </div>
@@ -1213,24 +1198,19 @@ export function DecisionWorkspace() {
       <section className="scenario-card card" aria-labelledby="scenario-title">
         <div className="section-heading scenario-heading">
           <div>
-            <span className="eyebrow" lang="my">
-              အခြေအနေစမ်းသပ်ရန်
-            </span>
-            <h2 id="scenario-title">Scenario simulator</h2>
-            <p>
-              Editable straight-line assumptions for comparison—not a forecast.
-            </p>
+            <span className="eyebrow">{copy.scenario.eyebrow}</span>
+            <h2 id="scenario-title">{copy.scenario.title}</h2>
+            <p>{copy.scenario.subtitle}</p>
           </div>
           <span className="not-forecast">
             <AlertCircle aria-hidden="true" />
-            Assumptions only
+            {copy.scenario.badge}
           </span>
         </div>
 
         <div className="scenario-controls">
           <label>
-            <span lang="my">စမ်းသပ်မည့်အခြေအနေ</span>
-            <span>Scenario preset</span>
+            <span>{copy.scenario.preset}</span>
             <span className="select-wrap">
               <select
                 value={scenarioKind}
@@ -1241,7 +1221,7 @@ export function DecisionWorkspace() {
                 {(Object.keys(SCENARIO_PRESETS) as ScenarioKind[]).map(
                   (kind) => (
                     <option key={kind} value={kind}>
-                      {scenarioCopy[kind].mm} · {scenarioCopy[kind].en}
+                      {copy.scenarios[kind]}
                     </option>
                   ),
                 )}
@@ -1251,8 +1231,7 @@ export function DecisionWorkspace() {
           </label>
 
           <label>
-            <span lang="my">အစပိုင်းကုန်ကျငွေ</span>
-            <span>Upfront amount (MMK)</span>
+            <span>{copy.scenario.amount}</span>
             <input
               type="number"
               min="0"
@@ -1265,8 +1244,8 @@ export function DecisionWorkspace() {
             />
             <small id="upfront-help">
               {scenarioInputIsValid
-                ? `Entered amount: ${formatMmk(upfrontMmk)}`
-                : "Enter a valid amount of zero or more."}
+                ? copy.scenario.entered(formatMmk(upfrontMmk))
+                : copy.scenario.invalid}
             </small>
           </label>
         </div>
@@ -1275,17 +1254,16 @@ export function DecisionWorkspace() {
           <>
             <div className="scenario-comparison" aria-live="polite">
               <div>
-                <span className="comparison-label">
-                  <span lang="my">မလုပ်မီ</span>
-                  <span>Baseline</span>
-                </span>
+                <span className="comparison-label">{copy.scenario.before}</span>
                 <dl>
                   <div>
-                    <dt>Cash runway</dt>
-                    <dd>{formatRunway(scenarioResult.baselineRunwayMonths)}</dd>
+                    <dt>{copy.scenario.runway}</dt>
+                    <dd>
+                      {formatRunway(scenarioResult.baselineRunwayMonths, copy)}
+                    </dd>
                   </div>
                   <div>
-                    <dt>12-month ending cash</dt>
+                    <dt>{copy.scenario.endingCash}</dt>
                     <dd>{formatMmk(scenarioResult.baselineEndingCashMmk)}</dd>
                   </div>
                 </dl>
@@ -1293,16 +1271,17 @@ export function DecisionWorkspace() {
               <ArrowRight className="comparison-arrow" aria-hidden="true" />
               <div className="scenario-after">
                 <span className="comparison-label">
-                  <span lang="my">လုပ်ပြီးနောက်</span>
-                  <span>{scenarioCopy[scenarioKind].en}</span>
+                  {copy.scenarios[scenarioKind]}
                 </span>
                 <dl>
                   <div>
-                    <dt>Cash runway</dt>
-                    <dd>{formatRunway(scenarioResult.scenarioRunwayMonths)}</dd>
+                    <dt>{copy.scenario.runway}</dt>
+                    <dd>
+                      {formatRunway(scenarioResult.scenarioRunwayMonths, copy)}
+                    </dd>
                   </div>
                   <div>
-                    <dt>12-month ending cash</dt>
+                    <dt>{copy.scenario.endingCash}</dt>
                     <dd>{formatMmk(scenarioResult.scenarioEndingCashMmk)}</dd>
                   </div>
                 </dl>
@@ -1310,46 +1289,59 @@ export function DecisionWorkspace() {
               <div
                 className={`scenario-impact impact-${scenarioResult.runwayDirection}`}
               >
-                <span>12-month cash impact</span>
+                <span>{copy.scenario.impact}</span>
                 <strong>{formatMmk(scenarioResult.endingCashImpactMmk)}</strong>
-                <small>Runway {scenarioResult.runwayDirection}</small>
+                <small>
+                  {
+                    copy.scenario[
+                      scenarioResult.runwayDirection === "improves"
+                        ? "runwayImproves"
+                        : scenarioResult.runwayDirection === "worsens"
+                          ? "runwayWorsens"
+                          : "runwayUnchanged"
+                    ]
+                  }
+                </small>
               </div>
             </div>
 
             <details className="scenario-assumptions">
               <summary>
                 <ChevronDown aria-hidden="true" />
-                <span lang="my">ယူဆချက်များကြည့်ရန်</span>
-                <span>View assumptions</span>
+                <span>{copy.scenario.assumptions}</span>
               </summary>
               <div className="assumption-grid">
                 <div>
-                  <span>Monthly revenue change</span>
+                  <span>{copy.scenario.revenueChange}</span>
                   <strong>{formatMmk(scenario.monthlyRevenueChangeMmk)}</strong>
-                  <small>Starts month {scenario.revenueChangeStartMonth}</small>
+                  <small>
+                    {copy.scenario.startsMonth(scenario.revenueChangeStartMonth)}
+                  </small>
                 </div>
                 <div>
-                  <span>Monthly expense change</span>
+                  <span>{copy.scenario.expenseChange}</span>
                   <strong>{formatMmk(scenario.monthlyExpenseChangeMmk)}</strong>
-                  <small>Starts month {scenario.expenseChangeStartMonth}</small>
+                  <small>
+                    {copy.scenario.startsMonth(scenario.expenseChangeStartMonth)}
+                  </small>
                 </div>
                 <div>
-                  <span>Recent cash realization</span>
+                  <span>{copy.scenario.realization}</span>
                   <strong>
                     {Math.round(scenarioResult.cashRealizationRate * 100)}%
                   </strong>
-                  <small>Applied to added revenue</small>
+                  <small>{copy.scenario.appliedRevenue}</small>
                 </div>
                 <div>
-                  <span>Baseline source</span>
+                  <span>{copy.scenario.baselineSource}</span>
                   <strong>
                     {snapshot.baseline30Day.sourceMonths.join(", ")}
                   </strong>
-                  <small>Trailing three months</small>
+                  <small>{copy.scenario.trailing}</small>
                 </div>
               </div>
               <ul className="caveat-list">
-                {scenarioResult.caveats.map((caveat) => (
+                {copy.scenario.caveats.map((caveat) => (
                   <li key={caveat}>{caveat}</li>
                 ))}
               </ul>
@@ -1357,91 +1349,36 @@ export function DecisionWorkspace() {
           </>
         ) : (
           <p className="scenario-error" role="alert">
-            Enter a valid upfront MMK amount to run the scenario.
+            {copy.scenario.invalidAlert}
           </p>
         )}
       </section>
 
       <footer className="advisory-note">
         <ShieldCheck aria-hidden="true" />
-        <p>
-          <strong lang="my">အကြံပြုချက်အတွက်သာ။</strong>{" "}
-          <span lang="my">
-            ဤရလဒ်များသည် ရရှိထားသောလုပ်ငန်းဒေတာအပေါ်အခြေခံပြီး စာရင်းကိုင်၊
-            ချေးငွေ သို့မဟုတ် ရင်းနှီးမြှုပ်နှံမှုအကြံပေးချက်မဟုတ်ပါ။
-          </span>
-          <span>
-            Advisory only. Verify timing and amounts before making a financial
-            commitment.
-          </span>
-        </p>
+        <p>{copy.advisory}</p>
       </footer>
 
       <section className="question-dock" aria-labelledby="question-title">
         <div className="question-dock-heading">
           <div>
             <MessageCircle aria-hidden="true" />
-            <span>
-              <strong id="question-title" lang="my">
-                ဘာသိချင်ပါသလဲ?
-              </strong>
-              <small>Ask about {profileCopy[profile.id].shortMm}</small>
-            </span>
+            <strong id="question-title">{copy.assistant.title}</strong>
           </div>
           <span className="request-status" aria-live="polite">
-            {analysisState.phase === "loading"
-              ? "တွက်ချက်နေသည်…"
-              : analysisState.phase === "answered"
-                ? "အဖြေရရှိပြီး"
-                : analysisState.phase === "error"
-                  ? "ပြန်ကြိုးစားနိုင်သည်"
-                  : "Burmese or English"}
+            {assistantStatus}
           </span>
         </div>
 
-        <div className="desktop-suggestions" aria-label="Suggested questions">
-          {suggestedQuestions.map((suggestion) => (
-            <button
-              type="button"
-              key={suggestion}
-              disabled={analysisState.phase === "loading"}
-              onClick={() => void submitQuestion(suggestion)}
-              lang="my"
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
-
-        <details className="mobile-suggestions">
-          <summary>
-            <ChevronDown aria-hidden="true" />
-            <span lang="my">မေးခွန်းအကြံပြုချက်များ</span>
-          </summary>
-          <div>
-            {suggestedQuestions.map((suggestion) => (
-              <button
-                type="button"
-                key={suggestion}
-                disabled={analysisState.phase === "loading"}
-                onClick={() => void submitQuestion(suggestion)}
-                lang="my"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        </details>
-
         <form className="question-form" onSubmit={handleSubmit}>
           <label className="sr-only" htmlFor="business-question">
-            Ask ThriveAI a question about the selected business
+            {copy.assistant.fieldLabel}
           </label>
           <textarea
             id="business-question"
             rows={1}
             value={question}
-            placeholder="ဥပမာ — အခု ဆိုင်ခွဲဖွင့်သင့်လား?"
+            placeholder={copy.assistant.placeholder}
             onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={handleQuestionKeyDown}
             onCompositionStart={() => setIsComposing(true)}
@@ -1457,10 +1394,32 @@ export function DecisionWorkspace() {
             ) : (
               <Send aria-hidden="true" />
             )}
-            <span lang="my">မေးမည်</span>
-            <span className="send-en">Ask</span>
+            <span>
+              {analysisState.phase === "loading"
+                ? copy.assistant.sending
+                : copy.assistant.send}
+            </span>
           </button>
         </form>
+
+        <details className="dock-suggestions">
+          <summary>
+            <ChevronDown aria-hidden="true" />
+            <span>{copy.assistant.suggestions}</span>
+          </summary>
+          <div aria-label={copy.assistant.suggestionsAria}>
+            {copy.assistant.prompts.map((suggestion) => (
+              <button
+                type="button"
+                key={suggestion}
+                disabled={analysisState.phase === "loading"}
+                onClick={() => void submitQuestion(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </details>
       </section>
     </main>
   );

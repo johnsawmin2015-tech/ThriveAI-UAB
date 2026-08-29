@@ -38,9 +38,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const analysis = await analyzeBusiness(parsed.data, {
-      oidcToken: request.headers.get("x-vercel-oidc-token") ?? undefined,
-    });
+    const analysis = await analyzeBusiness(parsed.data);
     return NextResponse.json(analysis, {
       status: 200,
       headers: noStoreHeaders,

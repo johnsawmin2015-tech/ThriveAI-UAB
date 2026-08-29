@@ -23,11 +23,12 @@ that makes the cash consequence and its assumptions visible.
 
 1. Select one of three synthetic Myanmar SME profiles.
 2. Review deterministic metrics, health score, risks, and opportunities.
-3. Ask a question in Burmese, English, or both.
-4. Receive a validated AI-ranked answer when Gemini is configured, or an
-   explicitly labeled deterministic fallback.
-5. Act on prioritized overdue receivables and the next-best action.
-6. Audit the Cash Bridge, then compare editable what-if scenarios.
+3. Switch the interface language with **ENG | မြန်မာ** (default: Myanmar).
+4. Ask a question in the active language; the UI sends `preferredLanguage`.
+5. Receive a validated AI-ranked answer when OpenAI or Gemini is configured, or
+   an explicitly labeled deterministic fallback.
+6. Act on prioritized overdue receivables and the amount-first next-best action.
+7. Audit the Cash Bridge (risky vs safer ending cash), then compare scenarios.
 
 The default distributor tells the core story: latest revenue is up **14%**, but
 MMK **12M** is in receivables, cash is only MMK **4.3M**, and payables are MMK
@@ -47,25 +48,28 @@ All profiles and transactions are synthetic and illustrative.
 
 ## Core features
 
-- Burmese-first, responsive single-page decision workspace with English
-  supporting copy.
+- Burmese-first decision workspace with a true **English / မြန်မာ** locale mode
+  (one language at a time; preference stored in `localStorage` as
+  `thriveai-locale`).
 - Four headline metrics, deterministic 0–100 health score, cash runway,
   liquidity ratios, and rule-based risks/opportunities.
 - Due-date-aware receivables prioritization with explicit aging and value bands.
-- Ranked next actions grounded in the selected business only.
-- Auditable Cash Bridge showing current cash, expected collections, branch
-  outlay, minimum reserve, reserve gap, and ending cash.
+- Amount-first next-best action grounded in the selected business only.
+- Auditable Cash Bridge comparing risky vs safer ending cash, with equations
+  disclosed on demand.
 - Six editable sensitivity presets: hiring, inventory, branch, equipment,
   marketing, and custom expense.
+- Compact Ask ThriveAI dock with collapsible suggested prompts.
 - Defensive AI states: timeout, malformed response, provider error, missing
   configuration, cancellation, retry, and stale-response protection.
 
 ## Meaningful AI utilization
 
-When `GEMINI_API_KEY` is configured, the server uses the Google GenAI SDK with
-**Gemini 3.7 Flash** by default. The model receives the user’s Burmese,
-English, or mixed-language question plus a server-built bundle of deterministic
-signals and evidence. It returns structured JSON that selects:
+When `OPENAI_API_KEY` or `GEMINI_API_KEY` is configured, the server calls the
+available provider (OpenAI first when its key is present, otherwise Gemini
+**3.7 Flash** by default). The model receives the user’s question, the UI
+`preferredLanguage` (`en` | `my` | `auto`), and a server-built bundle of
+deterministic signals and evidence. It returns structured JSON that selects:
 
 - an intent;
 - approved finding/signal IDs;
@@ -77,12 +81,14 @@ This is not a free-form financial answer. Temperature is zero, the response is
 constrained by a JSON schema, parsed with Zod, checked for business-scoped
 evidence and allowed actions, and given at most one bounded repair attempt.
 Only after validation does the server hydrate the selected IDs into reviewed
-Burmese/English copy and deterministic values.
+Burmese/English copy and deterministic values. The UI shows the summary that
+matches the active locale (`summaryMm` or `summaryEn`) with a graceful
+fallback.
 
 A local classifier supports six intents—cash flow, expenses, expansion,
-inventory, hiring, and priority advice—and detects Burmese/mixed output
-preference. If Gemini is disabled, absent, late, invalid, or unavailable,
-ThriveAI returns an honest `deterministic_fallback` with degradation reasons.
+inventory, hiring, and priority advice. If the model is disabled, absent, late,
+invalid, or unavailable, ThriveAI returns an honest `deterministic_fallback`
+with degradation reasons.
 
 ## Deterministic finance and trust boundary
 
@@ -114,12 +120,12 @@ methodology is in [`src/lib/finance/README.md`](src/lib/finance/README.md).
 Synthetic profiles
   -> deterministic finance engine
   -> metrics, health, signals, receivable priorities, scenarios, Cash Bridge
-  -> POST /api/analyze with business ID + untrusted question
+  -> POST /api/analyze with business ID + question + preferredLanguage
   -> server rebuilds business-scoped evidence
-  -> optional Gemini structured selection
+  -> optional OpenAI or Gemini structured selection
   -> Zod + semantic/evidence validation
   -> reviewed bilingual catalog hydration
-  -> UI answer
+  -> UI shows the active-locale summary
 
 Any provider or validation failure
   -> labeled deterministic fallback
@@ -189,9 +195,7 @@ Current verified scope:
   prompt injection, and cross-business evidence isolation.
 - The Playwright script checks desktop/mobile overflow, required Cash Bridge
   values, fallback interaction, persona reset, scenario editing, prompt-injection
-  rendering, 44px mobile controls, and creates the three screenshots below.
-  It was not rerun during this documentation-only pass because it writes those
-  screenshot artifacts.
+  rendering, 44px mobile controls, and refreshes the three screenshots below.
 - Production uses OpenAI (`OPENAI_API_KEY`) when configured, otherwise Gemini,
   otherwise an honest deterministic fallback. Vercel AI Gateway is optional.
 
@@ -223,12 +227,12 @@ Exactly five named specialized agents contributed:
    Cash Bridge demo, and final submission narrative.
 2. **Core Engineering Agent** — scaffolded the app and implemented synthetic
    profiles, deterministic finance, scenarios, Cash Bridge, and finance tests.
-3. **Product & UX Agent** — implemented and debugged the responsive
-   Burmese-first decision workspace, AI client states, and accessible mobile
+3. **Product & UX Agent** — implemented the responsive Burmese-first decision
+   workspace, ENG/MM localization, AI client states, and accessible mobile
    behavior.
-4. **AI Financial Intelligence Agent** — implemented the Gemini structured
-   selection path, validation/repair boundary, deterministic fallback, and AI
-   contract tests.
+4. **AI Financial Intelligence Agent** — implemented the evidence-locked
+   structured selection path (OpenAI/Gemini), validation/repair boundary,
+   deterministic fallback, and AI contract tests.
 5. **QA / Red-Team / Release Agent** — defined the risk-based acceptance matrix
    for finance, AI safety, security, responsive behavior, and deployment
    readiness, then was assigned the final read-only release audit.
@@ -236,14 +240,14 @@ Exactly five named specialized agents contributed:
 ## Third-party resources and disclosure
 
 This prototype uses Next.js, React, TypeScript, Tailwind CSS, Zod, the Google
-GenAI SDK with Gemini as an optional runtime, Vercel AI Gateway for hosted
+GenAI SDK and optional OpenAI Chat Completions, Vercel AI Gateway for hosted
 Gemini access, Lucide React, Vitest, and Playwright. Hosting is Vercel.
 Package versions are recorded in `package.json` and `package-lock.json`.
 
 No external dataset, bank data, customer data, proprietary model, paid design
 asset, or third-party financial benchmark is included. The three SME profiles,
 invoice records, and financial histories are synthetic. The model is called only
-at runtime when a Google key, OpenAI key, or AI Gateway key is present.
+at runtime when an OpenAI key, Google key, or AI Gateway key is present.
 
 ## Limitations
 
@@ -256,8 +260,8 @@ at runtime when a Google key, OpenAI key, or AI Gateway key is present.
 - Expected collections are assumptions, not collection predictions.
 - ThriveAI does not make lending, credit, eligibility, underwriting, or
   investment decisions.
-- Without a Gemini key—or on any model failure—the product uses a clearly
-  labeled deterministic fallback.
+- Without an OpenAI or Gemini key—or on any model failure—the product uses a
+  clearly labeled deterministic fallback.
 - The prototype has no production authentication, persistence, bank
   integration, audit controls, or guarantees of production security,
   accounting correctness, or regulatory compliance.

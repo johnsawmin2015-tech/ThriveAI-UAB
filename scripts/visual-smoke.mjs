@@ -47,8 +47,7 @@ try {
   await desktop.locator("#business-question").fill(question);
   await desktop.locator(".send-button").click();
   await desktop
-    .locator(".analysis-panel")
-    .getByText("deterministic_fallback", { exact: true })
+    .locator(".analysis-panel .mode-fallback")
     .waitFor();
   await desktop.locator(".analysis-panel").scrollIntoViewIfNeeded();
   await desktop.screenshot({
@@ -57,7 +56,8 @@ try {
   });
 
   await desktop.locator("#business-selector").selectOption("clothing-retailer");
-  await desktop.getByText("Mingalar Fashion", { exact: true }).first().waitFor();
+  assert.equal(await desktop.locator("#business-selector").inputValue(), "clothing-retailer");
+  await desktop.locator(".business-name").waitFor();
   assert.equal(await desktop.locator(".analysis-panel").count(), 0);
   await desktop.locator("#business-selector").selectOption("distributor");
 
@@ -65,7 +65,11 @@ try {
     .locator(".scenario-controls select")
     .selectOption("inventory");
   await desktop.locator(".scenario-controls input").fill("4500000");
-  await desktop.getByText("Entered amount: MMK 4.5M", { exact: true }).waitFor();
+  assert.equal(
+    await desktop.locator(".scenario-controls input").inputValue(),
+    "4500000",
+  );
+  await desktop.locator("#upfront-help").getByText("MMK 4.5M").waitFor();
 
   const injectionResponse = await desktop.request.post(`${baseUrl}/api/analyze`, {
     data: {
@@ -102,7 +106,7 @@ try {
 
   const visibleControlSizes = await mobile
     .locator(
-      ".workspace-shell button:visible, .workspace-shell select:visible, .workspace-shell input:visible, .workspace-shell textarea:visible",
+      ".workspace-shell button:visible, .workspace-shell select:visible, .workspace-shell input:visible, .workspace-shell textarea:visible, .language-switcher button:visible",
     )
     .evaluateAll((controls) =>
       controls.map((control) => {

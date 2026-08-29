@@ -31,7 +31,6 @@ import {
 interface AnalyzeOptions {
   readonly runtime?: ModelRuntime;
   readonly timeoutMs?: number;
-  readonly oidcToken?: string;
 }
 
 type DecisionFailure =
@@ -235,7 +234,7 @@ export const analyzeBusiness = async (
   const profile = businessProfilesById[request.businessId];
   const bundle = buildEvidenceBundle(profile);
   const deterministicIntent = classifyIntent(request.question);
-  const runtime = options.runtime ?? resolveModelRuntime(options.oidcToken);
+  const runtime = options.runtime ?? resolveModelRuntime();
 
   if (runtime.state === "disabled") {
     return fallbackResponse(request, bundle, deterministicIntent, [

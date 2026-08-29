@@ -10,24 +10,31 @@ payables, and **MMK 12M** tied up in receivables.”
 
 **12–25 seconds — Reveal the practical opportunity**
 
-“ThriveAI separates total receivables from what can be acted on now. These top
-three overdue invoices total **MMK 4.8M**. The owner does not need another
-dashboard—she needs to know what to do first.”
+“ThriveAI separates total receivables from what can be acted on now. The
+next-best action leads with the amount: **MMK 4.8M** from the top three overdue
+invoices. The owner does not need another dashboard—she needs to know what to
+do first.”
 
-Select the distributor and point to the deterministic health, liquidity, and
-overdue-invoice signals.
+Select the distributor and point to the health score (**57 / Watch**), metrics,
+and amount-first recommendation.
 
-**25–42 seconds — Ask in the owner’s language**
+**25–42 seconds — Show language mode, then ask**
 
-Enter:
+Toggle **ENG | မြန်မာ** (default is Myanmar). Interface labels switch to one
+language at a time; the preference is remembered.
 
-> အခု ဆိုင်ခွဲဖွင့်ရင် cash flow အန္တရာယ်ဘယ်လောက်ရှိလဲ?
+In Myanmar mode, enter:
 
-“The owner can ask in Burmese, English, or both. With Gemini configured,
-ThriveAI uses the question and trusted financial evidence to select and rank
-the most relevant findings and actions. It cannot invent financial numbers.
-Without a model key, the same screen returns an honestly labeled deterministic
-fallback.”
+> အခုချိန် ဆိုင်ခွဲဖွင့်သင့်လား?
+
+Or in English mode:
+
+> Should I open another branch right now?
+
+“The UI sends `preferredLanguage` with the request. When a model key is
+configured, ThriveAI selects and ranks evidence-backed findings—it cannot invent
+financial numbers. Without a key, or on failure, the same screen returns an
+honestly labeled deterministic fallback.”
 
 **42–65 seconds — Deliver the Cash Bridge moment**
 
@@ -36,10 +43,10 @@ reserve. Expanding now leaves only **MMK 1.3M**—a **MMK 1.2M** reserve gap.
 That is also the minimum collection needed before committing.”
 
 “Collecting the top overdue **MMK 4.8M** first changes the same decision to
-**MMK 6.1M** ending cash. The next action is specific: collect before
-expanding.”
+**MMK 6.1M** ending cash. The safer path is clear: collect before expanding.”
 
-Point to:
+Point to the risky vs safer ending-cash comparison, then open the calculation
+disclosure if judges want the equation:
 
 `4.3M current cash + 4.8M assumed collections − 3M outlay = 6.1M`
 
@@ -66,12 +73,12 @@ cash. AI is valuable for a different job: interpreting Burmese or
 mixed-language questions, understanding which business concern is relevant,
 and contextually ranking the most useful signals and actions.
 
-Gemini is therefore constrained to selecting structured intent, signal,
+The model is therefore constrained to selecting structured intent, signal,
 evidence, action, and rationale codes from server-approved options. Zod and
 semantic checks reject unsupported or cross-business selections. Reviewed
 bilingual text and deterministic values are added only after validation. The
-product still works through an explicit rule-based fallback when Gemini is not
-configured or fails.
+product still works through an explicit rule-based fallback when OpenAI/Gemini
+is not configured or fails.
 
 ## Why UAB?
 
@@ -91,9 +98,9 @@ financial engagement—not automated underwriting.
 
 Excel is excellent for calculations, and ThriveAI does not replace it. The
 prototype adds a consistent financial methodology, overdue prioritization,
-auditable scenarios, Burmese/mixed-language intent, and evidence-backed action
-ranking. Today the data is synthetic; real spreadsheet import would be a
-future integration.
+auditable scenarios, Burmese/English locale mode, mixed-language intent, and
+evidence-backed action ranking. Today the data is synthetic; real spreadsheet
+import would be a future integration.
 
 ### How do you prevent hallucinations?
 

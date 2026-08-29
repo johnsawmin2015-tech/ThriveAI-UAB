@@ -205,7 +205,7 @@ const createGatewayProvider = (token: string): ModelProvider => {
   };
 };
 
-export const resolveModelRuntime = (_oidcToken?: string): ModelRuntime => {
+export const resolveModelRuntime = (): ModelRuntime => {
   if (providerDisabled()) {
     return { state: "disabled" };
   }
