@@ -146,7 +146,7 @@ The browser never supplies trusted metrics, and the API response is marked
 - Vitest for finance and AI contract tests.
 - Playwright for responsive, interaction, fallback, isolation, and screenshot
   smoke checks.
-- Live deployment: [https://thriveai-uab.vercel.app](https://thriveai-uab.vercel.app).
+- Live deployment:(https://thrive-ai-uab.vercel.app/)).
 
 ## Setup
 
@@ -209,7 +209,7 @@ Current verified scope:
 
 ## Live Demo
 
-- App: [https://thriveai-uab.vercel.app](https://thriveai-uab.vercel.app)
+- App: https://thrive-ai-uab.vercel.app/
 - Source: [https://github.com/johnsawmin2015-tech/ThriveAI-UAB](https://github.com/johnsawmin2015-tech/ThriveAI-UAB)
 
 Production uses a configured OpenAI or Gemini key for model mode. If neither is
